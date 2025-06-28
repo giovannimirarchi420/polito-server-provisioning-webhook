@@ -2,6 +2,8 @@
 
 A Python FastAPI webhook service for handling server provisioning events. This service manages Kubernetes BareMetalHost resources without network configuration.
 
+This webhook has been developed to serve events produced by the [Cloud Resource Reservation System](https://github.com/giovannimirarchi420/cloud-resource-reservation), a comprehensive platform for managing cloud resource reservations with authentication, monitoring, and multi-service orchestration.
+
 ## Overview
 
 This webhook receives server reservation events and provisions/deprovisions BareMetalHost resources in a Kubernetes cluster using the Metal³ operator.

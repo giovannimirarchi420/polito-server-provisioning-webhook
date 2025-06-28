@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webhook-server-client-config
+  namespace: prognose
+data:
+  K8S_NAMESPACE: "metal3"
+  BMH_API_GROUP: "metal3.io"
+  BMH_API_VERSION: "v1alpha1"
+  BMH_PLURAL: "baremetalhosts"
+  PROVISION_IMAGE: "http://192.168.11.23/images/noble-server-cloudimg-amd64.img"
+  PROVISION_CHECKSUM: "http://192.168.11.23/images/noble-server-cloudimg-amd64.img.sha256sum"
+  PROVISION_CHECKSUM_TYPE: "sha256"
+  PROVISIONING_TIMEOUT: "2700"  # 45 minutes
+  DEPROVISION_IMAGE: ""
+  LOG_LEVEL: "INFO"
+  DISABLE_HEALTHZ_LOGS: "true"
+  
+
+  # Notification configuration
+  NOTIFICATION_ENDPOINT: "https://prognose.crownlabs.polito.it/api/notifications/webhook"
+  NOTIFICATION_TIMEOUT: "30"
+
+  # Webhook log configuration  
+  WEBHOOK_LOG_ENDPOINT: "https://prognose.crownlabs.polito.it/api/webhooks/log"
+  WEBHOOK_LOG_TIMEOUT: "30"

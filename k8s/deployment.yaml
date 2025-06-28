@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-server-client
+  namespace: prognose
+  labels:
+    app: webhook-server-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-server-client
+  template:
+    metadata:
+      labels:
+        app: webhook-server-client
+    spec:
+      serviceAccountName: webhook-server-client-sa
+      containers:
+      - name: webhook-server-client
+        image: docker.io/g420/polito-server-webhook-client:0.0.1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: webhook-server-client-secret
+              key: WEBHOOK_SECRET
+        envFrom:
+        - configMapRef:
+            name: webhook-server-client-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
