@@ -12,7 +12,6 @@ This webhook receives server reservation events and provisions/deprovisions Bare
 
 - **Server Provisioning**: Automatically provisions BareMetalHost resources
 - **Server Deprovisioning**: Handles resource cleanup and deprovisioning
-- **Batch Processing**: Supports batch provisioning/deprovisioning operations
 - **Security**: HMAC signature verification for webhook security
 - **Monitoring**: Health checks and comprehensive logging
 - **Kubernetes Integration**: Native Kubernetes API integration
