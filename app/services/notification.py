@@ -32,59 +32,6 @@ class NotificationService:
         # Set default timeout for all requests
         self.session.timeout = config.NOTIFICATION_TIMEOUT
     
-    def _create_notification_payload(
-        self,
-        webhook_id: str,
-        user_id: str,
-        message: str,
-        message_type: str = "INFO",
-        event_id: Optional[str] = None,
-        resource_id: Optional[str] = None,
-        event_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Create notification payload following WebhookNotificationRequestDTO structure.
-        
-        Args:
-            webhook_id: Webhook identifier
-            user_id: User identifier
-            message: Notification message (max 500 chars)
-            message_type: Type of message (max 50 chars)
-            event_id: Event identifier
-            resource_id: Resource identifier
-            event_type: Type of event
-            metadata: Additional metadata
-            
-        Returns:
-            Notification payload dictionary
-        """
-        # Truncate message if too long
-        if len(message) > 500:
-            message = message[:497] + "..."
-            
-        # Truncate type if too long
-        if len(message_type) > 50:
-            message_type = message_type[:50]
-            
-        payload = {
-            "webhookId": webhook_id,
-            "userId": user_id,
-            "message": message,
-            "type": message_type
-        }
-        
-        if event_id:
-            payload["eventId"] = event_id
-        if resource_id:
-            payload["resourceId"] = resource_id
-        if event_type:
-            payload["eventType"] = event_type
-        if metadata:
-            payload["metadata"] = metadata
-            
-        return payload
-    
     def _create_webhook_log_payload(
         self,
         webhook_id: int,
@@ -219,26 +166,39 @@ class NotificationService:
             logger.debug("No notification endpoint configured, skipping notification")
             return True
         
-        # Create message based on success status
+
         if success:
-            message = f"Resource '{resource_name}' provisioned successfully"
-            message_type = "SUCCESS"
+            message = (
+                f"Your bare metal server reservation '{resource_name}' has been successfully "
+                f"provisioned and will be available soon after the system boot completes. "
+                f"This could take some minutes. You can login using SSH with the user 'prognose' "
+                f"and your configured SSH key to the IP address specified in the resource specification."
+            )
+            notification_type = "SUCCESS"
+            event_type = "PROVISIONING_COMPLETED"
         else:
-            message = f"Failed to provision resource '{resource_name}'"
-            if error_message:
-                message += f": {error_message}"
-            message_type = "ERROR"
+            message = (
+                f"Your bare metal server reservation '{resource_name}' provisioning failed. "
+                f"Error: {error_message or 'Unknown error occurred'}"
+            )
+            notification_type = "ERROR"
+            event_type = "PROVISIONING_FAILED"
         
-        payload = self._create_notification_payload(
-            webhook_id=webhook_id,
-            user_id=user_id,
-            message=message,
-            message_type=message_type,
-            event_id=event_id,
-            resource_id=resource_id,
-            event_type="PROVISIONING",
-            metadata={"resourceName": resource_name}
-        )
+        payload = {
+            "webhookId": webhook_id,
+            "userId": user_id,
+            "message": message,
+            "type": notification_type,
+            "eventId": event_id,
+            "resourceId": resource_name,
+            "eventType": event_type,
+            "metadata": {
+                "resourceType": "BareMetalHost",
+                "resourceName": resource_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "namespace": config.K8S_NAMESPACE
+            }
+        }
         
         logger.info(f"Sending provisioning notification for resource '{resource_name}' (success: {success})")
         return self._send_request(config.NOTIFICATION_ENDPOINT, payload, config.NOTIFICATION_TIMEOUT)
