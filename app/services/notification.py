@@ -5,9 +5,7 @@ This module provides functionality to send notifications about
 BareMetalHost provisioning status to external endpoints.
 """
 import json
-from datetime import datetime, timezone
 from typing import Dict, Optional, Any
-import uuid
 
 import requests
 

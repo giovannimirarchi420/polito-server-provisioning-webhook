@@ -5,12 +5,11 @@ This module provides FastAPI router with endpoints for processing webhook events
 related to server resource provisioning and deprovisioning only.
 """
 from typing import Optional, Union
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 
-from . import config, models
+from . import config, models, utils
 from .services import security, kubernetes, notification
 
 logger = config.logger
@@ -21,148 +20,6 @@ EVENT_END = 'EVENT_END'
 EVENT_DELETED = 'EVENT_DELETED'
 
 router = APIRouter()
-
-
-async def _verify_webhook_signature(request: Request, signature: Optional[str]) -> bytes:
-    """
-    Verify webhook signature and return raw payload.
-    
-    Args:
-        request: FastAPI request object
-        signature: Signature from webhook header
-        
-    Returns:
-        Raw payload bytes
-        
-    Raises:
-        HTTPException: If signature verification fails
-    """
-    raw_payload = await request.body()
-    
-    if config.WEBHOOK_SECRET:
-        if not security.verify_signature(raw_payload, signature):
-            logger.warning("Webhook signature verification failed")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature"
-            )
-    
-    return raw_payload
-
-
-def _create_success_response(action: str, resource_name: str, user_id: Optional[str]) -> JSONResponse:
-    """Create a standardized success response for single event operations."""
-    return JSONResponse({
-        "status": "success",
-        "message": f"Successfully {action}ed server '{resource_name}'",
-        "userId": user_id
-    })
-
-
-def _handle_provision_event(
-    payload: models.WebhookPayload,
-    raw_payload: bytes
-) -> bool:
-    """
-    Handle provisioning event for a single server resource. Returns True on success.
-    """
-    resource_name = payload.resource_name
-    event_id = payload.event_id
-    webhook_id = payload.webhook_id
-    user_id = payload.user_id or "unknown"
-
-    try:
-        success = kubernetes.patch_baremetalhost(
-            bmh_name=resource_name,
-            image_url=config.PROVISION_IMAGE,
-            ssh_key=payload.ssh_public_key,
-            checksum=config.PROVISION_CHECKSUM,
-            checksum_type=config.PROVISION_CHECKSUM_TYPE,
-            wait_for_completion=False,
-            webhook_id=webhook_id,
-            user_id=user_id,
-            event_id=event_id,
-            timeout=config.PROVISIONING_TIMEOUT
-        )
-        
-        if success:
-            # Send webhook log for successful initiation
-            if not notification.send_webhook_log(
-                webhook_id=webhook_id,
-                event_type=EVENT_START,
-                success=True,
-                payload_data=payload.model_dump(),
-                status_code=200,
-                response=f"Provisioning initiated for server '{resource_name}'",
-                retry_count=0,
-                metadata={"resourceName": resource_name, "userId": user_id, "eventId": event_id}
-            ):
-                logger.warning(f"Failed to send webhook log for server '{resource_name}'")
-        
-            logger.info(f"[{EVENT_START}] Successfully initiated provisioning for server '{resource_name}' (Event ID: {event_id}). Monitoring in background.")
-            return True
-        else:
-            logger.error(f"[{EVENT_START}] Failed to start provisioning for server '{resource_name}' (Event ID: {event_id}).")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error provisioning server '{resource_name}': {str(e)}")
-        return False
-
-
-def _handle_deprovision_event(
-    payload: Union[models.WebhookPayload, models.EventWebhookPayload],
-    raw_payload: bytes
-) -> bool:
-    """
-    Handle deprovisioning event for a single server resource. Returns True on success.
-    """
-    if isinstance(payload, models.WebhookPayload):
-        resource_name = payload.resource_name
-        event_id = payload.event_id
-        webhook_id = payload.webhook_id
-        user_id = payload.user_id
-    elif isinstance(payload, models.EventWebhookPayload):
-        resource_name = payload.data.resource.name
-        event_id = str(payload.data.id)
-        webhook_id = payload.webhook_id
-        user_id = payload.data.keycloak_id if payload.data else None
-    else:
-        logger.error("Invalid payload type for deprovisioning.")
-        return False
-
-    try:
-        success = kubernetes.patch_baremetalhost(
-            bmh_name=resource_name,
-            image_url=None  # None triggers deprovisioning
-        )
-        
-        if success:
-            logger.info(f"[{EVENT_END}] Successfully initiated deprovisioning for server '{resource_name}' (Event ID: {event_id}).")
-            
-            # Send webhook log for successful deprovisioning
-            if event_id and notification.send_webhook_log(
-                webhook_id=webhook_id,
-                event_type=EVENT_END,
-                success=True,
-                payload_data=payload.model_dump(),
-                status_code=200,
-                response=f"Deprovisioning completed for server '{resource_name}'",
-                retry_count=0,
-                metadata={"resourceName": resource_name, "userId": user_id, "eventId": event_id}
-            ):
-                logger.debug(f"Successfully sent webhook log for server '{resource_name}' deprovisioning")
-            else:
-                logger.warning(f"Failed to send webhook log for server '{resource_name}' deprovisioning")
-                
-        else:
-            logger.error(f"[{EVENT_END}] Failed to deprovision server '{resource_name}' (Event ID: {event_id}).")
-        
-        return success
-        
-    except Exception as e:
-        logger.error(f"Error deprovisioning server '{resource_name}': {str(e)}")
-        return False
 
 
 @router.post("/webhook")
@@ -177,7 +34,7 @@ async def handle_webhook(
     """
     logger.info(f"Received webhook request. Attempting to parse payload.")
     
-    raw_payload = await _verify_webhook_signature(request, x_webhook_signature)
+    raw_payload = await utils.verify_webhook_signature(request, x_webhook_signature)
     
     # Handle single event payload format
     if isinstance(payload, models.WebhookPayload):
@@ -197,11 +54,11 @@ async def handle_webhook(
 
         # Process the single server event
         if payload.event_type == EVENT_START:
-            if _handle_provision_event(
+            if utils.handle_provision_event(
                 payload,
                 raw_payload
             ):
-                return _create_success_response("provision", payload.resource_name, payload.user_id)
+                return utils.create_success_response("provision", payload.resource_name, payload.user_id)
             else:
                 logger.error(f"Failed to provision server '{payload.resource_name}' for event {payload.event_id}")
                 raise HTTPException(
@@ -210,11 +67,11 @@ async def handle_webhook(
                 )
 
         elif payload.event_type == EVENT_END:
-            if _handle_deprovision_event(
+            if utils.handle_deprovision_event(
                 payload,
                 raw_payload
             ):
-                return _create_success_response("deprovision", payload.resource_name, payload.user_id)
+                return utils.create_success_response("deprovision", payload.resource_name, payload.user_id)
             else:
                 logger.error(f"Failed to deprovision server '{payload.resource_name}' for event {payload.event_id}")
                 raise HTTPException(
@@ -235,17 +92,17 @@ async def handle_webhook(
         )
         
         if payload.event_type == EVENT_DELETED:
-            now = payload.timestamp # Use timestamp from the payload
+            now = utils.parse_timestamp(payload.timestamp) # Parse timestamp from string to datetime
             
-            # Ensure start and end times are offset-aware for comparison with offset-aware 'now'
-            reservation_start = payload.data.start
-            reservation_end = payload.data.end
+            # Parse start and end times from string to datetime
+            reservation_start = utils.parse_timestamp(payload.data.start)
+            reservation_end = utils.parse_timestamp(payload.data.end)
 
             logger.debug(f"Current time (UTC): {now}, Reservation Start: {reservation_start}, Reservation End: {reservation_end}")
 
             if reservation_start <= now < reservation_end:
                 logger.info(f"Reservation for server '{payload.data.resource.name}' is currently active. Initiating deprovision.")
-                if _handle_deprovision_event(
+                if utils.handle_deprovision_event(
                     payload,
                     raw_payload
                 ):
