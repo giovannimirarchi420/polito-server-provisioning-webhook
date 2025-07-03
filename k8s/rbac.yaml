@@ -35,7 +35,7 @@ roleRef:
   name: webhook-client-role
 subjects:
 - kind: ServiceAccount
-  name: webhook-switch-port-client-sa
+  name: webhook-server-client-sa
   namespace: prognose
 ---
 
@@ -49,5 +49,5 @@ roleRef:
   name: webhook-client-metal3-role
 subjects:
 - kind: ServiceAccount
-  name: webhook-switch-port-client-sa
+  name: webhook-server-client-sa
   namespace: prognose

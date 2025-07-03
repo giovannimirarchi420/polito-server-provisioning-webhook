@@ -65,7 +65,8 @@ def _handle_provision_event(
     resource_name: str, 
     ssh_public_key: Optional[str], 
     event_id: str,
-    user_id: str
+    user_id: str,
+    webhook_id: int
 ) -> bool:
     """
     Handle provisioning event for a single server resource. Returns True on success.
@@ -78,7 +79,7 @@ def _handle_provision_event(
             checksum=config.PROVISION_CHECKSUM,
             checksum_type=config.PROVISION_CHECKSUM_TYPE,
             wait_for_completion=False,
-            webhook_id=event_id,  # Use event_id instead of webhook_id
+            webhook_id=webhook_id,
             user_id=user_id,
             event_id=event_id,
             timeout=config.PROVISIONING_TIMEOUT
@@ -87,15 +88,14 @@ def _handle_provision_event(
         if success:
             # Send webhook log for successful initiation
             if not notification.send_webhook_log(
-                webhook_id=event_id,  # Use event_id instead of webhook_id
+                webhook_id=webhook_id,
                 event_type=EVENT_START,
                 success=True,
+                payload_data=f"Provisioning initiated for server '{resource_name}'",
                 status_code=200,
-                response_message=f"Provisioning initiated for server '{resource_name}'",
+                response=f"Provisioning initiated for server '{resource_name}'",
                 retry_count=0,
-                resource_name=resource_name,
-                user_id=user_id,
-                event_id=event_id
+                metadata={"resourceName": resource_name, "userId": user_id, "eventId": event_id}
             ):
                 logger.warning(f"Failed to send webhook log for server '{resource_name}'")
         
@@ -113,7 +113,8 @@ def _handle_provision_event(
 def _handle_deprovision_event(
     resource_name: str, 
     event_id: str,
-    user_id: Optional[str] = None,
+    webhook_id: int,
+    user_id: Optional[str] = None
 ) -> bool:
     """
     Handle deprovisioning event for a single server resource. Returns True on success.
@@ -129,15 +130,14 @@ def _handle_deprovision_event(
             
             # Send webhook log for successful deprovisioning
             if event_id and notification.send_webhook_log(
-                webhook_id=event_id,  # Use event_id instead of webhook_id
+                webhook_id=webhook_id,
                 event_type=EVENT_END,
                 success=True,
+                payload_data=f"Deprovisioning completed for server '{resource_name}'",
                 status_code=200,
-                response_message=f"Deprovisioning completed for server '{resource_name}'",
+                response=f"Deprovisioning completed for server '{resource_name}'",
                 retry_count=0,
-                resource_name=resource_name,
-                user_id=user_id,
-                event_id=event_id
+                metadata={"resourceName": resource_name, "userId": user_id, "eventId": event_id}
             ):
                 logger.debug(f"Successfully sent webhook log for server '{resource_name}' deprovisioning")
             else:
@@ -189,7 +189,8 @@ async def handle_webhook(
                 payload.resource_name, 
                 payload.ssh_public_key, 
                 payload.event_id,
-                payload.user_id or "unknown"
+                payload.user_id or "unknown",
+                payload.webhook_id
             ):
                 return _create_success_response("provision", payload.resource_name, payload.user_id)
             else:
@@ -203,6 +204,7 @@ async def handle_webhook(
             if _handle_deprovision_event(
                 payload.resource_name, 
                 payload.event_id,
+                payload.webhook_id,
                 payload.user_id
             ):
                 return _create_success_response("deprovision", payload.resource_name, payload.user_id)
@@ -221,7 +223,7 @@ async def handle_webhook(
 
     elif isinstance(payload, models.EventWebhookPayload):
         logger.info(
-            f"Processing server EVENT_DELETED webhook. "
+            f"Processing server {payload.event_type} webhook. "
             f"Resource Name: '{payload.data.resource.name}'."
         )
         
@@ -239,6 +241,7 @@ async def handle_webhook(
                 if _handle_deprovision_event(
                     payload.data.resource.name, 
                     str(payload.data.id),
+                    payload.webhook_id,
                     payload.data.keycloak_id if payload.data else None
                 ):
                     logger.info(f"Successfully initiated deprovisioning for server '{payload.data.resource.name}' due to EVENT_DELETED.")

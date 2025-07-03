@@ -551,13 +551,16 @@ class ProvisioningMonitor:
                 webhook_id=webhook_id,
                 event_type=event_type,
                 success=success,
+                payload_data=f"Provisioning monitoring for resource '{resource_name}'",
                 status_code=status_code,
-                response_message=response_message,
+                response=response_message,
                 retry_count=0,
-                resource_name=resource_name,
-                user_id=user_id,
-                error_message=error_message,
-                event_id=event_id
+                metadata={
+                    "resourceName": resource_name,
+                    "userId": user_id,
+                    "eventId": event_id,
+                    "errorMessage": error_message
+                }
             )
             
             if not notification_sent:

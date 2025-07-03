@@ -1,8 +1,8 @@
 """
-Pydantic models for server provisioning webhook payload validation.
+Pydantic models for switch port webhook payload validation.
 
 This module defines the data models used for validating incoming webhook payloads.
-Only handles Server resource types.
+Only handles Switch Port resource types.
 """
 from datetime import datetime
 from typing import Optional, List
@@ -18,6 +18,7 @@ class WebhookPayload(BaseModel):
     event_type: str = Field(..., alias='eventType', description="Type of the event (EVENT_START, EVENT_END)")
     timestamp: datetime = Field(..., description="Timestamp when the event occurred")
     event_id: str = Field(..., alias='eventId', description="Unique identifier for the event")
+    webhook_id: int = Field(..., alias='webhookId', description="Unique identifier for the webhook")
     user_id: Optional[str] = Field(None, alias='userId', description="ID of the user associated with the event")
     username: Optional[str] = Field(None, description="Username of the user")
     email: Optional[str] = Field(None, description="Email address of the user")
@@ -38,8 +39,10 @@ class WebhookPayload(BaseModel):
 
 class EventResourceInfo(BaseModel):
     """Model for resource information within EVENT_DELETED data."""
-    name: str = Field(..., description="Name of the resource to be deprovisioned")
-
+    name: str = Field(..., description="Name of the resource to be released")
+    id: int = Field(..., description="Unique identifier for the resource")
+    specs: Optional[str] = Field(None, alias='specs', description="Specifications of the resource")
+    location: Optional[str] = Field(None, alias='location', description="Location of the resource")
 
 class EventData(BaseModel):
     """Model for the 'data' field in an EVENT_DELETED payload."""
@@ -55,4 +58,5 @@ class EventWebhookPayload(BaseModel):
     """Model for EVENT_DELETED webhook payload."""
     event_type: str = Field(..., alias='eventType', description="Type of the event, should be EVENT_DELETED")
     timestamp: datetime = Field(..., description="Timestamp when the event occurred")
+    webhook_id: str = Field(..., alias='webhookId', description="Unique identifier for the webhook")
     data: EventData = Field(..., description="Detailed data for the EVENT_DELETED event")
