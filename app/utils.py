@@ -88,11 +88,27 @@ def parse_timestamp(timestamp_str: str) -> datetime:
         ValueError: If timestamp format is invalid
     """
     try:
-        # Handle ISO format with or without microseconds
+        # Replace Z with timezone offset
+        timestamp_str = timestamp_str.replace('Z', '+00:00')
+        
+        # Handle nanosecond precision by truncating to microseconds
         if '.' in timestamp_str:
-            return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        else:
-            return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            # Find the decimal point and truncate fractional seconds to 6 digits
+            if '+' in timestamp_str:
+                # Has timezone
+                datetime_part, tz_part = timestamp_str.rsplit('+', 1)
+                date_time, fractional = datetime_part.rsplit('.', 1)
+                # Truncate fractional seconds to 6 digits (microseconds)
+                fractional = fractional[:6].ljust(6, '0')
+                timestamp_str = f"{date_time}.{fractional}+{tz_part}"
+            else:
+                # No explicit timezone
+                date_time, fractional = timestamp_str.rsplit('.', 1)
+                # Truncate fractional seconds to 6 digits (microseconds)
+                fractional = fractional[:6].ljust(6, '0')
+                timestamp_str = f"{date_time}.{fractional}"
+            
+        return datetime.fromisoformat(timestamp_str)
     except ValueError as e:
         logger.error(f"Failed to parse timestamp '{timestamp_str}': {e}")
         raise ValueError(f"Invalid timestamp format: {timestamp_str}")
@@ -166,7 +182,7 @@ def handle_provision_event(
                 webhook_id=webhook_id,
                 event_type=EVENT_START,
                 success=True,
-                payload_data=payload.model_dump(),
+                payload_data=json.dumps(payload.model_dump()),
                 status_code=200,
                 response=f"Provisioning initiated for server '{resource_name}'",
                 retry_count=0,
@@ -220,7 +236,7 @@ def handle_deprovision_event(
                 webhook_id=webhook_id,
                 event_type=EVENT_END,
                 success=True,
-                payload_data=payload.model_dump(),
+                payload_data=json.dumps(payload.model_dump()),
                 status_code=200,
                 response=f"Deprovisioning completed for server '{resource_name}'",
                 retry_count=0,
