@@ -4,9 +4,8 @@ Server Provisioning Webhook API endpoints.
 This module provides FastAPI router with endpoints for processing webhook events
 related to server resource provisioning and deprovisioning only.
 """
-from typing import Optional, List, Union
-from datetime import datetime
-import uuid
+from typing import Optional, Union
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Header, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -56,8 +55,7 @@ def _create_success_response(action: str, resource_name: str, user_id: Optional[
     return JSONResponse({
         "status": "success",
         "message": f"Successfully {action}ed server '{resource_name}'",
-        "userId": user_id,
-        "timestamp": datetime.now().isoformat()
+        "userId": user_id
     })
 
 

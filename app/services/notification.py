@@ -195,7 +195,6 @@ class NotificationService:
             "metadata": {
                 "resourceType": "BareMetalHost",
                 "resourceName": resource_name,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "namespace": config.K8S_NAMESPACE
             }
         }
