@@ -62,20 +62,22 @@ def _create_success_response(action: str, resource_name: str, user_id: Optional[
 
 
 def _handle_provision_event(
-    resource_name: str, 
-    ssh_public_key: Optional[str], 
-    event_id: str,
-    user_id: str,
-    webhook_id: int
+    payload: models.WebhookPayload,
+    raw_payload: bytes
 ) -> bool:
     """
     Handle provisioning event for a single server resource. Returns True on success.
     """
+    resource_name = payload.resource_name
+    event_id = payload.event_id
+    webhook_id = payload.webhook_id
+    user_id = payload.user_id or "unknown"
+
     try:
         success = kubernetes.patch_baremetalhost(
             bmh_name=resource_name,
             image_url=config.PROVISION_IMAGE,
-            ssh_key=ssh_public_key,
+            ssh_key=payload.ssh_public_key,
             checksum=config.PROVISION_CHECKSUM,
             checksum_type=config.PROVISION_CHECKSUM_TYPE,
             wait_for_completion=False,
@@ -91,7 +93,7 @@ def _handle_provision_event(
                 webhook_id=webhook_id,
                 event_type=EVENT_START,
                 success=True,
-                payload_data=f"Provisioning initiated for server '{resource_name}'",
+                payload=payload.model_dump(),
                 status_code=200,
                 response=f"Provisioning initiated for server '{resource_name}'",
                 retry_count=0,
@@ -111,14 +113,26 @@ def _handle_provision_event(
 
 
 def _handle_deprovision_event(
-    resource_name: str, 
-    event_id: str,
-    webhook_id: int,
-    user_id: Optional[str] = None
+    payload: Union[models.WebhookPayload, models.EventWebhookPayload],
+    raw_payload: bytes
 ) -> bool:
     """
     Handle deprovisioning event for a single server resource. Returns True on success.
     """
+    if isinstance(payload, models.WebhookPayload):
+        resource_name = payload.resource_name
+        event_id = payload.event_id
+        webhook_id = payload.webhook_id
+        user_id = payload.user_id
+    elif isinstance(payload, models.EventWebhookPayload):
+        resource_name = payload.data.resource.name
+        event_id = str(payload.data.id)
+        webhook_id = payload.webhook_id
+        user_id = payload.data.keycloak_id if payload.data else None
+    else:
+        logger.error("Invalid payload type for deprovisioning.")
+        return False
+
     try:
         success = kubernetes.patch_baremetalhost(
             bmh_name=resource_name,
@@ -133,7 +147,7 @@ def _handle_deprovision_event(
                 webhook_id=webhook_id,
                 event_type=EVENT_END,
                 success=True,
-                payload_data=f"Deprovisioning completed for server '{resource_name}'",
+                payload=payload.model_dump(),
                 status_code=200,
                 response=f"Deprovisioning completed for server '{resource_name}'",
                 retry_count=0,
@@ -186,11 +200,8 @@ async def handle_webhook(
         # Process the single server event
         if payload.event_type == EVENT_START:
             if _handle_provision_event(
-                payload.resource_name, 
-                payload.ssh_public_key, 
-                payload.event_id,
-                payload.user_id or "unknown",
-                payload.webhook_id
+                payload,
+                raw_payload
             ):
                 return _create_success_response("provision", payload.resource_name, payload.user_id)
             else:
@@ -202,10 +213,8 @@ async def handle_webhook(
 
         elif payload.event_type == EVENT_END:
             if _handle_deprovision_event(
-                payload.resource_name, 
-                payload.event_id,
-                payload.webhook_id,
-                payload.user_id
+                payload,
+                raw_payload
             ):
                 return _create_success_response("deprovision", payload.resource_name, payload.user_id)
             else:
@@ -239,10 +248,8 @@ async def handle_webhook(
             if reservation_start <= now < reservation_end:
                 logger.info(f"Reservation for server '{payload.data.resource.name}' is currently active. Initiating deprovision.")
                 if _handle_deprovision_event(
-                    payload.data.resource.name, 
-                    str(payload.data.id),
-                    payload.webhook_id,
-                    payload.data.keycloak_id if payload.data else None
+                    payload,
+                    raw_payload
                 ):
                     logger.info(f"Successfully initiated deprovisioning for server '{payload.data.resource.name}' due to EVENT_DELETED.")
                     return JSONResponse({
